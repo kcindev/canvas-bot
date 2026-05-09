@@ -46,7 +46,7 @@ async function main() {
   const client = createDiscordClient();
   attachInteractionHandlers(client);
 
-  client.once('ready', () => {
+  client.once('clientReady', () => {
     console.log(`Logged in as ${client.user.tag}.`);
     scheduleWeeklyDigest(client);
   });
