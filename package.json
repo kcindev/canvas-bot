@@ -6,6 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "register-commands": "node src/registerCommands.js",
+    "test:canvas": "node src/testCanvas.js",
+    "test:assignments": "node src/testAssignments.js",
     "dev": "node src/index.js",
     "start": "node src/index.js"
   },
