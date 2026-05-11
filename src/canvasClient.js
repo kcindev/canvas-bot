@@ -1,5 +1,5 @@
 const { DateTime } = require('luxon');
-const { getCurrentWeekRange, isIsoDateTimeInRange } = require('./dateUtils');
+const { getCurrentWeekRange, getReminderDateRange, isIsoDateTimeInRange } = require('./dateUtils');
 
 function getCanvasConfig() {
   const { CANVAS_BASE_URL, CANVAS_ACCESS_TOKEN } = process.env;
@@ -44,7 +44,9 @@ async function canvasGet(pathOrUrl) {
   if (!response.ok) {
     const body = await response.text();
     const detail = body ? ` Canvas response: ${body.slice(0, 300)}` : '';
-    throw new Error(`Canvas request failed with ${response.status} ${response.statusText}.${detail}`);
+    const error = new Error(`Canvas request failed with ${response.status} ${response.statusText}.${detail}`);
+    error.status = response.status;
+    throw error;
   }
 
   return {
@@ -76,6 +78,20 @@ async function fetchCourseAssignments(courseId) {
   );
 }
 
+async function fetchAllCourseAssignments(courseId) {
+  return getPaginatedCanvasResults(
+    `/api/v1/courses/${encodeURIComponent(courseId)}/assignments?order_by=due_at&per_page=100`
+  );
+}
+
+async function fetchAssignmentSubmission(courseId, assignmentId) {
+  const page = await canvasGet(
+    `/api/v1/courses/${encodeURIComponent(courseId)}/assignments/${encodeURIComponent(assignmentId)}/submissions/self`
+  );
+
+  return page.data;
+}
+
 function normalizeAssignment(course, assignment, timezone) {
   return {
     courseId: course.id,
@@ -85,6 +101,34 @@ function normalizeAssignment(course, assignment, timezone) {
     dueAt: assignment.due_at,
     dueAtLocal: DateTime.fromISO(assignment.due_at, { setZone: true }).setZone(timezone),
     url: assignment.html_url || null
+  };
+}
+
+function isAssignmentUnavailable(assignment) {
+  return assignment.locked_for_user === true || assignment.locked === true || assignment.published === false;
+}
+
+function isSubmissionTurnedIn(submission) {
+  if (!submission) {
+    return false;
+  }
+
+  if (submission.workflow_state === 'unsubmitted') {
+    return false;
+  }
+
+  return (
+    submission.workflow_state === 'submitted' ||
+    submission.workflow_state === 'graded' ||
+    Boolean(submission.submitted_at)
+  );
+}
+
+function normalizeNotTurnedInAssignment(course, assignment, submission, timezone) {
+  return {
+    ...normalizeAssignment(course, assignment, timezone),
+    workflowState: submission ? submission.workflow_state || null : null,
+    submittedAt: submission ? submission.submitted_at || null : null
   };
 }
 
@@ -109,11 +153,53 @@ async function fetchAssignmentsDueThisWeek(timezone) {
   return assignments.sort((a, b) => a.dueAtLocal.toMillis() - b.dueAtLocal.toMillis());
 }
 
+async function fetchNotTurnedInAssignments(timezone) {
+  const { start, end } = getReminderDateRange(timezone);
+  const courses = await fetchActiveCourses();
+  const assignments = [];
+
+  for (const course of courses) {
+    try {
+      const courseAssignments = await fetchAllCourseAssignments(course.id);
+      const candidates = courseAssignments.filter((assignment) => (
+        assignment.due_at &&
+        !isAssignmentUnavailable(assignment) &&
+        isIsoDateTimeInRange(assignment.due_at, start, end)
+      ));
+
+      for (const assignment of candidates) {
+        try {
+          const submission = await fetchAssignmentSubmission(course.id, assignment.id);
+
+          if (!isSubmissionTurnedIn(submission)) {
+            assignments.push(normalizeNotTurnedInAssignment(course, assignment, submission, timezone));
+          }
+        } catch (error) {
+          console.error(
+            `Failed to fetch Canvas submission for course ${course.id}, assignment ${assignment.id}:`,
+            error.message
+          );
+        }
+      }
+    } catch (error) {
+      console.error(`Failed to fetch assignments for Canvas course ${course.id}:`, error.message);
+    }
+  }
+
+  return assignments.sort((a, b) => a.dueAtLocal.toMillis() - b.dueAtLocal.toMillis());
+}
+
 module.exports = {
+  canvasGet,
   fetchActiveCourses,
+  fetchAllCourseAssignments,
+  fetchAssignmentSubmission,
   fetchAssignmentsDueThisWeek,
   fetchCourseAssignments,
+  fetchNotTurnedInAssignments,
   getPaginatedCanvasResults,
+  isAssignmentUnavailable,
+  isSubmissionTurnedIn,
   parseNextLink
 };
 

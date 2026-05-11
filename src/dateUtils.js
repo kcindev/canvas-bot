@@ -12,6 +12,17 @@ function getCurrentWeekRange(timezone = getServerTimezone(), now = DateTime.now(
   return { start, end, timezone };
 }
 
+function getReminderDateRange(timezone = getServerTimezone(), now = DateTime.now()) {
+  const localNow = now.setZone(timezone);
+
+  return {
+    start: localNow.minus({ days: 14 }).startOf('day'),
+    end: localNow.plus({ days: 14 }).endOf('day'),
+    today: localNow.startOf('day'),
+    timezone
+  };
+}
+
 function isIsoDateTimeInRange(isoDateTime, start, end) {
   if (!isoDateTime) {
     return false;
@@ -49,6 +60,7 @@ module.exports = {
   formatDueTime,
   getCurrentWeekRange,
   getDayKey,
+  getReminderDateRange,
   getServerTimezone,
   isIsoDateTimeInRange
 };

@@ -21,6 +21,10 @@ function buildCommands() {
     new SlashCommandBuilder()
       .setName('due-this-week')
       .setDescription('Post a Canvas assignment digest for the current week.')
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName('not-turned-in')
+      .setDescription('Post a Canvas reminder for assignments not turned in.')
       .toJSON()
   ];
 }
@@ -33,7 +37,7 @@ async function registerCommands() {
   await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
     body: buildCommands()
   });
-  console.log('Registered /due-this-week.');
+  console.log('Registered /due-this-week and /not-turned-in.');
 }
 
 if (require.main === module) {

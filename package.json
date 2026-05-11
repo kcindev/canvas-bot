@@ -8,6 +8,7 @@
     "register-commands": "node src/registerCommands.js",
     "test:canvas": "node src/testCanvas.js",
     "test:assignments": "node src/testAssignments.js",
+    "test:not-turned-in": "node src/testNotTurnedIn.js",
     "dev": "node src/index.js",
     "start": "node src/index.js"
   },

@@ -1,10 +1,12 @@
 const { EmbedBuilder } = require('discord.js');
+const { DateTime } = require('luxon');
 const {
   formatDateRange,
   formatDayHeading,
   formatDueTime,
   getCurrentWeekRange,
-  getDayKey
+  getDayKey,
+  getReminderDateRange
 } = require('./dateUtils');
 
 const MAX_FIELD_VALUE_LENGTH = 1024;
@@ -31,6 +33,14 @@ function formatAssignmentLine(assignment, timezone) {
 
 function cleanCourseNameForDisplay(courseName) {
   return courseName.replace(TRAILING_SECTION_DATE_PATTERN, '').trim();
+}
+
+function formatNotTurnedInAssignmentLine(assignment, timezone) {
+  const dueTime = formatDueTime(assignment.dueAt, timezone);
+  const assignmentName = assignment.url ? `[${assignment.name}](${assignment.url})` : assignment.name;
+  const courseName = cleanCourseNameForDisplay(assignment.courseName);
+
+  return `**${dueTime}** - ${assignmentName}\nCourse: ${courseName}`;
 }
 
 function truncateFieldValue(value) {
@@ -84,9 +94,74 @@ function buildAssignmentsEmbed(assignments, timezone) {
   return embed;
 }
 
+function formatReminderDayHeading(day, today) {
+  const dayLabel = formatDayHeading(day);
+
+  if (day < today) {
+    return `OVERDUE - ${dayLabel}`;
+  }
+
+  if (day.hasSame(today, 'day')) {
+    return `Today - ${dayLabel}`;
+  }
+
+  return dayLabel;
+}
+
+function buildNotTurnedInEmbed(assignments, timezone, userId, checkedAt = new Date()) {
+  const checkedAtLocal = DateTime.fromJSDate(checkedAt).setZone(timezone);
+  const { today } = getReminderDateRange(timezone, checkedAtLocal);
+  const embed = new EmbedBuilder()
+    .setTitle('Assignments not turned in')
+    .setDescription(
+      `<@${userId}>, here are your assignments not turned in.\n\n` +
+      `Check ran: ${checkedAtLocal.toFormat('ccc, LLL d, yyyy h:mm a')}\n` +
+      `Timezone: ${timezone}`
+    )
+    .setColor(0xd35400)
+    .setTimestamp(checkedAt);
+
+  if (assignments.length === 0) {
+    embed.addFields({
+      name: 'Nothing to report',
+      value: 'No Canvas assignments in the reminder window are currently marked as not turned in.'
+    });
+
+    return embed;
+  }
+
+  const grouped = groupAssignmentsByDay(assignments, timezone);
+  let fieldsAdded = 0;
+
+  for (const [, dayAssignments] of grouped.entries()) {
+    if (fieldsAdded >= MAX_EMBED_FIELDS) {
+      break;
+    }
+
+    const day = dayAssignments[0].dueAtLocal.startOf('day');
+    const value = dayAssignments.map((assignment) => formatNotTurnedInAssignmentLine(assignment, timezone)).join('\n\n');
+
+    embed.addFields({
+      name: formatReminderDayHeading(day, today),
+      value: truncateFieldValue(value)
+    });
+
+    fieldsAdded += 1;
+  }
+
+  if (grouped.size > MAX_EMBED_FIELDS) {
+    embed.setFooter({ text: `Showing the first ${MAX_EMBED_FIELDS} days with assignments not turned in.` });
+  }
+
+  return embed;
+}
+
 module.exports = {
   buildAssignmentsEmbed,
+  buildNotTurnedInEmbed,
   cleanCourseNameForDisplay,
   formatAssignmentLine,
+  formatNotTurnedInAssignmentLine,
+  formatReminderDayHeading,
   groupAssignmentsByDay
 };
